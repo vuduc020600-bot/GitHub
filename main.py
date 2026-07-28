@@ -366,11 +366,13 @@ def filter_result_by_tf(full_res, df_raw, tf):
 
     filtered_trades = []
     for t in full_res.get('tradeHistory', []):
+        # TẠO BẢN SAO ĐỂ KHÔNG BỊ GHI ĐÈ SỐ STT GIỮA CÁC KHUNG THỜI GIAN
+        t_copy = dict(t) 
         try:
-            entry_dt = pd.to_datetime(t['entryDate'], format='%d thg %m, %Y')
-            if entry_dt >= start_date: filtered_trades.append(t)
+            entry_dt = pd.to_datetime(t_copy['entryDate'], format='%d thg %m, %Y')
+            if entry_dt >= start_date: filtered_trades.append(t_copy)
         except:
-            filtered_trades.append(t)
+            filtered_trades.append(t_copy)
 
     for idx, t in enumerate(reversed(filtered_trades)):
         t['tradeNo'] = idx + 1
@@ -393,7 +395,7 @@ def filter_result_by_tf(full_res, df_raw, tf):
     res_copy['avgLoss'] = round(float(-np.mean(losses)), 2) if losses else 0
     res_copy['tradeHistory'] = filtered_trades
     return res_copy
-
+    
 all_results = {}
 csv_files = [f for f in os.listdir(DATA_DIR) if f.lower().endswith('.csv')]
 print(f"🔍 Đang tổng hợp {len(ACTIVE_STRATEGIES)} chiến lược cho {len(csv_files)} mã cổ phiếu...")
