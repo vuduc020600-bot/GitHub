@@ -1,0 +1,36 @@
+name: Daily StockVN Backtest Update
+
+on:
+  schedule:
+    - cron: '0 10 * * 1-5' # Chạy lúc 10:00 UTC (17:00 VN) từ T2 đến T6
+  workflow_dispatch: # Cho phép anh bấm nút Run thủ công trên Github
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Main Script
+        run: python main.py
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add data/*.csv
+          git add backtest_results.json
+          git commit -m "Auto-update stock data and backtest results" || echo "No changes to commit"
+          git push
