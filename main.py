@@ -595,9 +595,83 @@ def strategy_nadaraya_watson(df_input):
     return run_generic_backtest(df, info)
 
 # ==========================================
+# CHIẾN LƯỢC: PIVOT POINT THÁNG (BẮT ĐÁY S2)
+# ==========================================
+def strategy_monthly_pivot(df_input):
+    df = df_input.copy().reset_index(drop=True)
+
+    # 1. Tạo cột tháng/năm để nhóm dữ liệu
+    # Dữ liệu từ engine đã có sẵn cột 'date_clean' định dạng datetime
+    df['year_month'] = df['date_clean'].dt.to_period('M')
+
+    # 2. Lấy High, Low, Close cao nhất/thấp nhất/cuối cùng của mỗi tháng
+    monthly_data = df.groupby('year_month').agg({
+        'high': 'max',
+        'low': 'min',
+        'close': 'last'
+    }).reset_index()
+
+    # Dịch chuyển 1 dòng để dùng dữ liệu tháng TRƯỚC tính cho tháng HIỆN TẠI
+    monthly_data['prev_high'] = monthly_data['high'].shift(1)
+    monthly_data['prev_low'] = monthly_data['low'].shift(1)
+    monthly_data['prev_close'] = monthly_data['close'].shift(1)
+
+    # Nối dữ liệu tháng trước vào DataFrame ngày hiện tại
+    df = df.merge(monthly_data[['year_month', 'prev_high', 'prev_low', 'prev_close']], on='year_month', how='left')
+
+    # 3. Tính toán Pivot Standard: P, S2, S4
+    # Công thức: P = (H+L+C)/3; S2 = P - (H-L); S4 = P - 3*(H-L)
+    df['P'] = (df['prev_high'] + df['prev_low'] + df['prev_close']) / 3
+    df['range'] = df['prev_high'] - df['prev_low']
+    df['S2'] = df['P'] - df['range']
+    df['S4'] = df['P'] - 3 * df['range']
+
+    # 4. Điều kiện MUA: Giá Low trong ngày đâm xuống hoặc chạm S2
+    buy_cond = df['low'] <= df['S2']
+    df['signal_buy_cond'] = buy_cond.fillna(False)
+
+    # 5. Quản lý vị thế BÁN (TP tại P, SL tại S4)
+    signal_sell = [False] * len(df)
+    in_pos = False
+
+    for i in range(len(df)):
+        # Bỏ qua những ngày đầu tiên chưa có dữ liệu của tháng trước
+        if pd.isna(df['P'].iloc[i]):
+            continue
+
+        if not in_pos:
+            if df['signal_buy_cond'].iloc[i]:
+                in_pos = True
+        else:
+            low = df['low'].iloc[i]
+            high = df['high'].iloc[i]
+            
+            # Bán khi Giá High chạm P (Chốt lời) HOẶC Low chạm S4 (Cắt lỗ)
+            if high >= df['P'].iloc[i] or low <= df['S4'].iloc[i]:
+                signal_sell[i] = True
+                in_pos = False
+
+    df['signal_sell_cond'] = signal_sell
+
+    # 6. Thông tin UI hiển thị lên Web Dashboard
+    info = {
+        "id": "MONTHLY_PIVOT",
+        "name": "Monthly Pivot (S2 -> P)",
+        "category": "Support/Resistance",
+        "ruleEntry": "Giá chạm hoặc giảm xuống dưới mức Hỗ trợ S2 của tháng.",
+        "ruleExit": "TP: Chạm đường trung tâm Pivot (P) / SL: Chạm Hỗ trợ S4.",
+        "description": "Chiến lược bắt đáy tại các vùng cản tâm lý theo công thức Standard Pivot.",
+        "start_idx": 30, # Bỏ qua tháng đầu tiên
+        "max_dd": -12.0,
+        "sharpe": 1.35
+    }
+
+    return run_generic_backtest(df, info)
+
+# ==========================================
 # NODE 6: XUẤT FILE JSON VÀ LỌC THEO KHUNG
 # ==========================================
-ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20, strategy_supertrend, strategy_nadaraya_watson]
+ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20, strategy_supertrend, strategy_nadaraya_watson, strategy_monthly_pivot]
 timeframes = ['all', '4y', '2y', '1y', '6m']
 
 def filter_result_by_tf(full_res, df_raw, tf):
