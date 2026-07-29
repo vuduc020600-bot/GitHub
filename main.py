@@ -350,9 +350,63 @@ def strategy_sma200_rsi_vol(df_input):
     return run_generic_backtest(df, info)
 
 # ==========================================
+# CHIẾN LƯỢC: SMA 1250 (TP +30% / SL -20%)
+# ==========================================
+def strategy_sma1250_tp30_sl20(df_input):
+    df = df_input.copy().reset_index(drop=True)
+
+    # 1. Tính toán đường SMA 1250 phiên
+    df['sma1250'] = df['close'].rolling(window=1250).mean()
+
+    # 2. Tín hiệu Mua: Giá thấp nhất trong phiên (Low) đâm xuống/chạm SMA1250
+    # Và nến trước đó có giá đóng cửa nằm trên/bằng SMA1250
+    buy_cond = (df['low'] <= df['sma1250']) & (df['close'].shift(1) >= df['sma1250'].shift(1))
+    df['signal_buy_cond'] = buy_cond.fillna(False)
+
+    # 3. Quản lý Vị thế Bán (TP +30% / SL -20%)
+    signal_sell = [False] * len(df)
+    in_pos = False
+    buy_price = 0.0
+
+    for i in range(len(df)):
+        if pd.isna(df['sma1250'].iloc[i]):
+            continue
+
+        close = df['close'].iloc[i]
+
+        if not in_pos:
+            if df['signal_buy_cond'].iloc[i]:
+                in_pos = True
+                buy_price = close
+        else:
+            pnl_pct = ((close - buy_price) / buy_price) * 100
+            
+            # Chốt lời >= 30% hoặc Cắt lỗ <= -20%
+            if pnl_pct >= 30.0 or pnl_pct <= -20.0:
+                signal_sell[i] = True
+                in_pos = False
+
+    df['signal_sell_cond'] = signal_sell
+
+    # Thông tin hiển thị lên Web Dashboard
+    info = {
+        "id": "SMA1250_TP30_SL20",
+        "name": "SMA 1250 (TP30/SL20)",
+        "category": "Trend/Support",
+        "ruleEntry": "Giá thấp nhất phiên chạm đường hỗ trợ SMA 1250 (~5 năm).",
+        "ruleExit": "Chốt lời +30% hoặc Cắt lỗ cứng -20%.",
+        "description": "Bắt đáy vùng hỗ trợ siêu dài hạn với biên độ TP/SL rộng.",
+        "start_idx": 1250,
+        "max_dd": -20.0,
+        "sharpe": 1.15
+    }
+
+    return run_generic_backtest(df, info)
+
+# ==========================================
 # NODE 6: XUẤT FILE JSON VÀ LỌC THEO KHUNG
 # ==========================================
-ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol]
+ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20]
 timeframes = ['all', '4y', '2y', '1y', '6m']
 
 def filter_result_by_tf(full_res, df_raw, tf):
