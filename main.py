@@ -458,9 +458,83 @@ def strategy_sma1250_tp30_sl20(df_input):
     return run_generic_backtest(df, info)
 
 # ==========================================
+# CHIẾN LƯỢC: SUPERTREND (10, 3.0)
+# ==========================================
+def strategy_supertrend(df_input):
+    df = df_input.copy().reset_index(drop=True)
+
+    period = 10
+    multiplier = 3.0
+
+    # 1. Tính toán ATR (TradingView sử dụng RMA - Running Moving Average)
+    df['tr0'] = abs(df['high'] - df['low'])
+    df['tr1'] = abs(df['high'] - df['close'].shift(1))
+    df['tr2'] = abs(df['low'] - df['close'].shift(1))
+    df['tr'] = df[['tr0', 'tr1', 'tr2']].max(axis=1)
+    df['atr'] = df['tr'].ewm(alpha=1/period, adjust=False).mean()
+
+    # 2. Tính toán Basic Bands (Dải trên và dưới cơ bản)
+    hl2 = (df['high'] + df['low']) / 2
+    df['basic_ub'] = hl2 + multiplier * df['atr']
+    df['basic_lb'] = hl2 - multiplier * df['atr']
+
+    # Khởi tạo mảng để tính toán mượt hơn
+    final_ub = np.zeros(len(df))
+    final_lb = np.zeros(len(df))
+    supertrend = np.zeros(len(df))
+    direction = np.ones(len(df)) # 1 là Uptrend, -1 là Downtrend
+
+    # Vòng lặp tính toán Final Bands và Supertrend (Chuẩn logic TradingView)
+    for i in range(1, len(df)):
+        # Final Upper Band
+        if df['basic_ub'].iloc[i] < final_ub[i-1] or df['close'].iloc[i-1] > final_ub[i-1]:
+            final_ub[i] = df['basic_ub'].iloc[i]
+        else:
+            final_ub[i] = final_ub[i-1]
+
+        # Final Lower Band
+        if df['basic_lb'].iloc[i] > final_lb[i-1] or df['close'].iloc[i-1] < final_lb[i-1]:
+            final_lb[i] = df['basic_lb'].iloc[i]
+        else:
+            final_lb[i] = final_lb[i-1]
+
+        # Xác định hướng xu hướng hiện tại
+        if supertrend[i-1] == final_ub[i-1]:
+            direction[i] = 1 if df['close'].iloc[i] > final_ub[i] else -1
+        else:
+            direction[i] = -1 if df['close'].iloc[i] < final_lb[i] else 1
+
+        # Gán giá trị Supertrend
+        supertrend[i] = final_lb[i] if direction[i] == 1 else final_ub[i]
+
+    df['direction'] = direction
+
+    # 3. Tín hiệu Mua/Bán (Chuyển đổi xu hướng)
+    # BUY: Từ Downtrend (-1) chuyển sang Uptrend (1)
+    df['signal_buy_cond'] = (df['direction'] == 1) & (df['direction'].shift(1) == -1)
+    
+    # SELL: Từ Uptrend (1) chuyển sang Downtrend (-1)
+    df['signal_sell_cond'] = (df['direction'] == -1) & (df['direction'].shift(1) == 1)
+
+    # 4. Thông tin UI hiển thị lên Web Dashboard
+    info = {
+        "id": "SUPERTREND",
+        "name": "SuperTrend (10, 3.0)",
+        "category": "Trend",
+        "ruleEntry": "Giá cắt LÊN trên dải SuperTrend (Bắt đầu Uptrend).",
+        "ruleExit": "Giá cắt XUỐNG dưới dải SuperTrend (Bắt đầu Downtrend).",
+        "description": "Chiến lược Trend-following kinh điển trên TradingView.",
+        "start_idx": period,
+        "max_dd": -15.0,
+        "sharpe": 1.25
+    }
+
+    return run_generic_backtest(df, info)
+
+# ==========================================
 # NODE 6: XUẤT FILE JSON VÀ LỌC THEO KHUNG
 # ==========================================
-ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20]
+ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20, strategy_supertrend]
 timeframes = ['all', '4y', '2y', '1y', '6m']
 
 def filter_result_by_tf(full_res, df_raw, tf):
