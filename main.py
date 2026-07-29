@@ -532,9 +532,72 @@ def strategy_supertrend(df_input):
     return run_generic_backtest(df, info)
 
 # ==========================================
+# CHIẾN LƯỢC: NADARAYA-WATSON ENVELOPE (LUXALGO)
+# ==========================================
+def strategy_nadaraya_watson(df_input):
+    df = df_input.copy().reset_index(drop=True)
+
+    # Cấu hình thông số mặc định của LuxAlgo
+    h = 8.0      # Bandwidth
+    mult = 3.0   # Multiplier
+    window = 500 # Tính toán trên 500 nến
+
+    # Nếu dữ liệu mã cổ phiếu không đủ 500 phiên, bỏ qua để tránh lỗi
+    if len(df) < window:
+        info = {
+            "id": "NADARAYA_WATSON", "name": "Nadaraya-Watson Env", "category": "Reversal/Bands",
+            "ruleEntry": "N/A", "ruleExit": "N/A", "description": "Không đủ dữ liệu 500 phiên.",
+            "start_idx": 0, "max_dd": 0, "sharpe": 0
+        }
+        return run_generic_backtest(df, info)
+
+    # 1. Khởi tạo mảng trọng số Gaussian Kernel (Non-Repainting)
+    i = np.arange(window)
+    w = np.exp(-(i**2) / (2 * h**2))
+    coefs = w / np.sum(w)
+    coefs_rev = coefs[::-1] # Đảo ngược để dùng với rolling của Pandas
+
+    # 2. Tính toán đường NW Estimator (Đường trung tâm)
+    def nw_estimator(x):
+        return np.dot(x, coefs_rev)
+
+    df['out'] = df['close'].rolling(window=window).apply(nw_estimator, raw=True)
+
+    # 3. Tính toán Mean Absolute Error (MAE) và Dải băng Upper/Lower
+    df['abs_err'] = abs(df['close'] - df['out'])
+    df['mae'] = df['abs_err'].rolling(window=window).mean() * mult
+
+    df['upper'] = df['out'] + df['mae']
+    df['lower'] = df['out'] - df['mae']
+
+    # 4. Tín hiệu Mua/Bán (Chạm và bật lại từ dải băng)
+    # BUY: Crossunder (Giá cắt XUỐNG dưới dải Lower) -> Tín hiệu bắt đáy
+    buy_cond = (df['close'] < df['lower']) & (df['close'].shift(1) >= df['lower'].shift(1))
+    df['signal_buy_cond'] = buy_cond.fillna(False)
+
+    # SELL: Crossover (Giá cắt LÊN trên dải Upper) -> Tín hiệu chốt lời/đỉnh
+    sell_cond = (df['close'] > df['upper']) & (df['close'].shift(1) <= df['upper'].shift(1))
+    df['signal_sell_cond'] = sell_cond.fillna(False)
+
+    # 5. Thông tin UI hiển thị lên Web Dashboard
+    info = {
+        "id": "NADARAYA_WATSON",
+        "name": "Nadaraya-Watson (8, 3)",
+        "category": "Reversal/Bands",
+        "ruleEntry": "Giá cắt XUỐNG dưới biên dưới (Lower Band).",
+        "ruleExit": "Giá cắt LÊN trên biên trên (Upper Band).",
+        "description": "Bắt đỉnh/đáy bằng Gaussian Kernel Regression (End-point method).",
+        "start_idx": window * 2 - 1, # Cần trễ 1 chu kỳ để tính đủ MAE
+        "max_dd": -15.0,
+        "sharpe": 1.25
+    }
+
+    return run_generic_backtest(df, info)
+
+# ==========================================
 # NODE 6: XUẤT FILE JSON VÀ LỌC THEO KHUNG
 # ==========================================
-ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20, strategy_supertrend]
+ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20, strategy_supertrend, strategy_nadaraya_watson]
 timeframes = ['all', '4y', '2y', '1y', '6m']
 
 def filter_result_by_tf(full_res, df_raw, tf):
