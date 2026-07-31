@@ -747,7 +747,7 @@ def strategy_sma1250_tp30_sl30(df): return run_sma1250_base(df, 30.0, -30.0)
 # ==========================================
 # NODE 6: XUẤT FILE JSON VÀ LỌC THEO KHUNG
 # ==========================================
-ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20, strategy_supertrend, strategy_nadaraya_watson, strategy_monthly_pivot, , strategy_sma1250_tp20_nosl, strategy_sma1250_tp20_sl10, strategy_sma1250_tp20_sl15, strategy_sma1250_tp20_sl20, strategy_sma1250_tp25_sl10, strategy_sma1250_tp25_sl15, strategy_sma1250_tp25_sl20, strategy_sma1250_tp25_sl25, strategy_sma1250_tp30_sl10, strategy_sma1250_tp30_sl15, strategy_sma1250_tp30_sl20, strategy_sma1250_tp30_sl25, strategy_sma1250_tp30_sl30]
+ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20, strategy_supertrend, strategy_nadaraya_watson, strategy_monthly_pivot, strategy_sma1250_tp20_nosl, strategy_sma1250_tp20_sl10, strategy_sma1250_tp20_sl15, strategy_sma1250_tp20_sl20, strategy_sma1250_tp25_sl10, strategy_sma1250_tp25_sl15, strategy_sma1250_tp25_sl20, strategy_sma1250_tp25_sl25, strategy_sma1250_tp30_sl10, strategy_sma1250_tp30_sl15, strategy_sma1250_tp30_sl20, strategy_sma1250_tp30_sl25, strategy_sma1250_tp30_sl30]
 timeframes = ['all', '4y', '2y', '1y', '6m']
 
 def filter_result_by_tf(full_res, df_raw, tf):
