@@ -669,9 +669,85 @@ def strategy_monthly_pivot(df_input):
     return run_generic_backtest(df, info)
 
 # ==========================================
+# HÀM GỐC: CHIẾN LƯỢC SMA 1250 TÙY CHỈNH TP/SL
+# ==========================================
+def run_sma1250_base(df_input, tp_pct, sl_pct):
+    df = df_input.copy().reset_index(drop=True)
+    df['sma1250'] = df['close'].rolling(window=1250).mean()
+    
+    # Điều kiện Mua: Giá Low đâm xuống hoặc chạm SMA1250
+    buy_cond = (df['low'] <= df['sma1250']) & (df['close'].shift(1) >= df['sma1250'].shift(1))
+    df['signal_buy_cond'] = buy_cond.fillna(False)
+
+    signal_sell = [False] * len(df)
+    in_pos = False
+    buy_price = 0.0
+
+    for i in range(len(df)):
+        if pd.isna(df['sma1250'].iloc[i]):
+            continue
+
+        close = df['close'].iloc[i]
+        
+        if not in_pos:
+            if df['signal_buy_cond'].iloc[i]:
+                in_pos = True
+                buy_price = close
+        else:
+            pnl_pct = ((close - buy_price) / buy_price) * 100
+            
+            # Kiểm tra chốt lời (TP) và cắt lỗ (SL)
+            hit_tp = (pnl_pct >= tp_pct)
+            hit_sl = (pnl_pct <= sl_pct) if sl_pct is not None else False
+            
+            if hit_tp or hit_sl:
+                signal_sell[i] = True
+                in_pos = False
+
+    df['signal_sell_cond'] = signal_sell
+    
+    # Tạo chuỗi tên hiển thị trên Dashboard
+    sl_str = f"SL{abs(sl_pct)}" if sl_pct is not None else "NoSL"
+    tp_str = f"TP{tp_pct}"
+    sl_desc = f"hoặc Cắt lỗ {sl_pct}%." if sl_pct is not None else "(Không cắt lỗ, hold to die)."
+    
+    info = {
+        "id": f"SMA1250_{tp_str}_{sl_str}",
+        "name": f"SMA 1250 ({tp_str}/{sl_str})",
+        "category": "Trend/Support",
+        "ruleEntry": "Giá thấp nhất phiên chạm đường hỗ trợ SMA 1250 (~5 năm).",
+        "ruleExit": f"Chốt lời +{tp_pct}% {sl_desc}",
+        "description": f"Kiểm thử tỷ lệ Risk/Reward cho hệ thống bắt đáy.",
+        "start_idx": 1250,
+        "max_dd": float(sl_pct) if sl_pct is not None else -50.0,
+        "sharpe": 1.2
+    }
+    
+    return run_generic_backtest(df, info)
+
+# ==========================================
+# 13 CHIẾN LƯỢC KẾ THỪA TỪ HÀM GỐC
+# ==========================================
+def strategy_sma1250_tp20_nosl(df): return run_sma1250_base(df, 20.0, None)
+def strategy_sma1250_tp20_sl10(df): return run_sma1250_base(df, 20.0, -10.0)
+def strategy_sma1250_tp20_sl15(df): return run_sma1250_base(df, 20.0, -15.0)
+def strategy_sma1250_tp20_sl20(df): return run_sma1250_base(df, 20.0, -20.0)
+
+def strategy_sma1250_tp25_sl10(df): return run_sma1250_base(df, 25.0, -10.0)
+def strategy_sma1250_tp25_sl15(df): return run_sma1250_base(df, 25.0, -15.0)
+def strategy_sma1250_tp25_sl20(df): return run_sma1250_base(df, 25.0, -20.0)
+def strategy_sma1250_tp25_sl25(df): return run_sma1250_base(df, 25.0, -25.0)
+
+def strategy_sma1250_tp30_sl10(df): return run_sma1250_base(df, 30.0, -10.0)
+def strategy_sma1250_tp30_sl15(df): return run_sma1250_base(df, 30.0, -15.0)
+def strategy_sma1250_tp30_sl20(df): return run_sma1250_base(df, 30.0, -20.0)
+def strategy_sma1250_tp30_sl25(df): return run_sma1250_base(df, 30.0, -25.0)
+def strategy_sma1250_tp30_sl30(df): return run_sma1250_base(df, 30.0, -30.0)
+
+# ==========================================
 # NODE 6: XUẤT FILE JSON VÀ LỌC THEO KHUNG
 # ==========================================
-ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20, strategy_supertrend, strategy_nadaraya_watson, strategy_monthly_pivot]
+ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20, strategy_supertrend, strategy_nadaraya_watson, strategy_monthly_pivot, , strategy_sma1250_tp20_nosl, strategy_sma1250_tp20_sl10, strategy_sma1250_tp20_sl15, strategy_sma1250_tp20_sl20, strategy_sma1250_tp25_sl10, strategy_sma1250_tp25_sl15, strategy_sma1250_tp25_sl20, strategy_sma1250_tp25_sl25, strategy_sma1250_tp30_sl10, strategy_sma1250_tp30_sl15, strategy_sma1250_tp30_sl20, strategy_sma1250_tp30_sl25, strategy_sma1250_tp30_sl30]
 timeframes = ['all', '4y', '2y', '1y', '6m']
 
 def filter_result_by_tf(full_res, df_raw, tf):
