@@ -669,14 +669,17 @@ def strategy_monthly_pivot(df_input):
     return run_generic_backtest(df, info)
 
 # ==========================================
-# HÀM GỐC: CHIẾN LƯỢC SMA 1250 TÙY CHỈNH TP/SL
+# CỖ MÁY SINH CHIẾN LƯỢC SMA 1250 (91 KỊCH BẢN)
 # ==========================================
-def run_sma1250_base(df_input, tp_pct, sl_pct):
+def run_sma1250_advanced(df_input, drop_pct, tp_pct, sl_pct):
     df = df_input.copy().reset_index(drop=True)
     df['sma1250'] = df['close'].rolling(window=1250).mean()
     
-    # Điều kiện Mua: Giá Low đâm xuống hoặc chạm SMA1250
-    buy_cond = (df['low'] <= df['sma1250']) & (df['close'].shift(1) >= df['sma1250'].shift(1))
+    # Tính mức giá Entry: Giảm X% so với đường SMA 1250
+    df['entry_line'] = df['sma1250'] * (1 - drop_pct / 100.0)
+    
+    # Điều kiện Mua: Giá Low đâm xuống hoặc chạm đường Entry
+    buy_cond = (df['low'] <= df['entry_line']) & (df['close'].shift(1) >= df['entry_line'].shift(1))
     df['signal_buy_cond'] = buy_cond.fillna(False)
 
     signal_sell = [False] * len(df)
@@ -706,18 +709,17 @@ def run_sma1250_base(df_input, tp_pct, sl_pct):
 
     df['signal_sell_cond'] = signal_sell
     
-    # Tạo chuỗi tên hiển thị trên Dashboard
+    # Format tên để hiển thị trên Dashboard gọn gàng
+    drop_str = f"Âm {drop_pct}%" if drop_pct > 0 else "Chạm"
     sl_str = f"SL{abs(sl_pct)}" if sl_pct is not None else "NoSL"
-    tp_str = f"TP{tp_pct}"
-    sl_desc = f"hoặc Cắt lỗ {sl_pct}%." if sl_pct is not None else "(Không cắt lỗ, hold to die)."
     
     info = {
-        "id": f"SMA1250_{tp_str}_{sl_str}",
-        "name": f"SMA 1250 ({tp_str}/{sl_str})",
-        "category": "Trend/Support",
-        "ruleEntry": "Giá thấp nhất phiên chạm đường hỗ trợ SMA 1250 (~5 năm).",
-        "ruleExit": f"Chốt lời +{tp_pct}% {sl_desc}",
-        "description": f"Kiểm thử tỷ lệ Risk/Reward cho hệ thống bắt đáy.",
+        "id": f"SMA1250_D{drop_pct}_TP{tp_pct}_{sl_str}",
+        "name": f"SMA1250 {drop_str} (TP{tp_pct}/{sl_str})",
+        "category": f"SMA1250 {drop_str}",
+        "ruleEntry": f"Giá giảm {drop_pct}% so với SMA 1250." if drop_pct > 0 else "Giá chạm SMA 1250.",
+        "ruleExit": f"Chốt lời +{tp_pct}% / Cắt lỗ {sl_pct}%." if sl_pct is not None else f"Chốt lời +{tp_pct}% / Không cắt lỗ.",
+        "description": f"Kiểm thử: Giảm {drop_pct}%, TP {tp_pct}%, SL {abs(sl_pct) if sl_pct else 0}%.",
         "start_idx": 1250,
         "max_dd": float(sl_pct) if sl_pct is not None else -50.0,
         "sharpe": 1.2
@@ -725,29 +727,30 @@ def run_sma1250_base(df_input, tp_pct, sl_pct):
     
     return run_generic_backtest(df, info)
 
-# ==========================================
-# 13 CHIẾN LƯỢC KẾ THỪA TỪ HÀM GỐC
-# ==========================================
-def strategy_sma1250_tp20_nosl(df): return run_sma1250_base(df, 20.0, None)
-def strategy_sma1250_tp20_sl10(df): return run_sma1250_base(df, 20.0, -10.0)
-def strategy_sma1250_tp20_sl15(df): return run_sma1250_base(df, 20.0, -15.0)
-def strategy_sma1250_tp20_sl20(df): return run_sma1250_base(df, 20.0, -20.0)
+# Cấu hình danh sách 7 trường hợp Entry x 13 trường hợp TP/SL
+SMA1250_STRATEGIES = []
+drop_levels = [0, 5, 10, 15, 20, 25, 30]
+tp_sl_combos = [
+    (20, None), (20, -10.0), (20, -15.0), (20, -20.0),
+    (25, -10.0), (25, -15.0), (25, -20.0), (25, -25.0),
+    (30, -10.0), (30, -15.0), (30, -20.0), (30, -25.0), (30, -30.0)
+]
 
-def strategy_sma1250_tp25_sl10(df): return run_sma1250_base(df, 25.0, -10.0)
-def strategy_sma1250_tp25_sl15(df): return run_sma1250_base(df, 25.0, -15.0)
-def strategy_sma1250_tp25_sl20(df): return run_sma1250_base(df, 25.0, -20.0)
-def strategy_sma1250_tp25_sl25(df): return run_sma1250_base(df, 25.0, -25.0)
+# Vòng lặp tự động sinh ra 91 chiến lược
+def create_strategy(d, t, s):
+    def strategy_func(df):
+        return run_sma1250_advanced(df, d, t, s)
+    strategy_func.__name__ = f"strat_sma1250_d{d}_tp{t}_sl{abs(s) if s else 'none'}"
+    return strategy_func
 
-def strategy_sma1250_tp30_sl10(df): return run_sma1250_base(df, 30.0, -10.0)
-def strategy_sma1250_tp30_sl15(df): return run_sma1250_base(df, 30.0, -15.0)
-def strategy_sma1250_tp30_sl20(df): return run_sma1250_base(df, 30.0, -20.0)
-def strategy_sma1250_tp30_sl25(df): return run_sma1250_base(df, 30.0, -25.0)
-def strategy_sma1250_tp30_sl30(df): return run_sma1250_base(df, 30.0, -30.0)
+for d in drop_levels:
+    for t, s in tp_sl_combos:
+        SMA1250_STRATEGIES.append(create_strategy(d, t, s))
 
 # ==========================================
 # NODE 6: XUẤT FILE JSON VÀ LỌC THEO KHUNG
 # ==========================================
-ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_sma1250, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_sma1250_tp30_sl20, strategy_supertrend, strategy_nadaraya_watson, strategy_monthly_pivot, strategy_sma1250_tp20_nosl, strategy_sma1250_tp20_sl10, strategy_sma1250_tp20_sl15, strategy_sma1250_tp20_sl20, strategy_sma1250_tp25_sl10, strategy_sma1250_tp25_sl15, strategy_sma1250_tp25_sl20, strategy_sma1250_tp25_sl25, strategy_sma1250_tp30_sl10, strategy_sma1250_tp30_sl15, strategy_sma1250_tp30_sl20, strategy_sma1250_tp30_sl25, strategy_sma1250_tp30_sl30]
+ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_supertrend, strategy_nadaraya_watson, strategy_monthly_pivot] + SMA1250_STRATEGIES
 timeframes = ['all', '4y', '2y', '1y', '6m']
 
 def filter_result_by_tf(full_res, df_raw, tf):
