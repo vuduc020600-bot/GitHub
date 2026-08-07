@@ -2,11 +2,11 @@ name: Daily StockVN Backtest Update
 
 on:
   schedule:
-    # Chạy lúc 11:31 trưa giờ Việt Nam (04:31 UTC) từ T2 đến T6
-    - cron: '31 4 * * 1-5'
+    # Chạy lúc 11:40 trưa giờ Việt Nam (04:40 UTC) từ T2 đến T6
+    - cron: '40 4 * * 1-5'
     
-    # Chạy lúc 15:01 chiều giờ Việt Nam (08:01 UTC) từ T2 đến T6
-    - cron: '1 8 * * 1-5'
+    # Chạy lúc 15:10 chiều giờ Việt Nam (08:10 UTC) từ T2 đến T6
+    - cron: '10 8 * * 1-5'
     
   workflow_dispatch: # Cho phép anh bấm nút Run thủ công trên Github hoặc nút Cập nhật trên Web Dashboard
 
