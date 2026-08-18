@@ -20,15 +20,7 @@ STOCKS = [
     "ACB", "BID", "CTG", "EIB", "HDB", "LPB", "MBB", "MSB", "NAB", "OCB", "SHB", "SSB", "STB", "TCB", "TPB", "VCB", "VIB", "VPB",
     "BSI", "CTS", "DSE", "EVF", "FTS", "HCM", "SSI", "VCI", "VIX", "VND",
     
-    # 2. Bất động sản & Xây dựng - Vật liệu
-    "BCM", "DIG", "DXG", "HDC", "KBC", "KDH", "NLG", "NVL", "PDR", "SJS", "SZC", "TCH", "VHM", "VIC", "VPI", "VRE",
-    "BMP", "CII", "CTD", "HHV", "HPG", "HSG", "HT1", "NKG", "VCG", "VGC",
-    
-    # 3. Công nghệ, Bán lẻ & Tiêu dùng
-    "CMG", "CTR", "DGW", "FPT", "FRT", "MWG", "PNJ",
-    "ANV", "BAF", "DBC", "HAG", "KDC", "MCH", "MSN", "SAB", "VHC", "VNM",
-    
-    # 4. Năng lượng, Dầu khí, Tiện ích & Công nghiệp khác
+    # 2. Năng lượng, Dầu khí, Tiện ích & Công nghiệp khác
     "BSR", "GAS", "GEE", "GEX", "NT2", "PC1", "PLX", "POW", "PVD", "PVT",
     "BWE", "DCM", "DGC", "DPM", "GMD", "GVR", "PAN", "PHR", "REE", "SBT", "SCS", "SIP", "VJC", "VSC", "VTP", "BVH"
 ]
