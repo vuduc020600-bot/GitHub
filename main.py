@@ -13,16 +13,16 @@ OUTPUT_JSON_PATH = "./backtest_results.json"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # ==========================================
-# NODE 2: CẬP NHẬT DỮ LIỆU CỔ PHIẾU (54 MÃ)
+# NODE 2: CẬP NHẬT DỮ LIỆU CỔ PHIẾU
 # ==========================================
 STOCKS = [
-    # 1. Ngân hàng & Tài chính - Chứng khoán
-    "ACB", "BID", "CTG", "EIB", "HDB", "LPB", "MBB", "MSB", "NAB", "OCB", "SHB", "SSB", "STB", "TCB", "TPB", "VCB", "VIB", "VPB",
-    "BSI", "CTS", "DSE", "EVF", "FTS", "HCM", "SSI", "VCI", "VIX", "VND",
-    
-    # 2. Năng lượng, Dầu khí, Tiện ích & Công nghiệp khác
-    "BSR", "GAS", "GEE", "GEX", "NT2", "PC1", "PLX", "POW", "PVD", "PVT",
-    "BWE", "DCM", "DGC", "DPM", "GMD", "GVR", "PAN", "PHR", "REE", "SBT", "SCS", "SIP", "VJC", "VSC", "VTP", "BVH"
+# 1. Ngân hàng & Tài chính - Chứng khoán
+"ACB", "BID", "CTG", "EIB", "HDB", "LPB", "MBB", "MSB", "NAB", "OCB", "SHB", "SSB", "STB", "TCB", "TPB", "VCB", "VIB", "VPB",
+"BSI", "CTS", "DSE", "EVF", "FTS", "HCM", "SSI", "VCI", "VIX", "VND",
+
+# 2. Năng lượng, Dầu khí, Tiện ích & Công nghiệp khác
+"BSR", "GAS", "GEE", "GEX", "NT2", "PC1", "PLX", "POW", "PVD", "PVT",
+"BWE", "DCM", "DGC", "DPM", "GMD", "GVR", "PAN", "PHR", "REE", "SBT", "SCS", "SIP", "VJC", "VSC", "VTP", "BVH"
 ]
 
 for stock in STOCKS:
@@ -41,14 +41,14 @@ for stock in STOCKS:
             except Exception:
                 old_df = pd.read_csv(file_path, index_col=0)
                 old_df.index = pd.to_datetime(old_df.index)
-            
+
             new_df = yf.download(ticker, period="30d", auto_adjust=True, progress=False)
             if not new_df.empty:
                 all_df = pd.concat([old_df, new_df])
                 all_df = all_df[~all_df.index.duplicated(keep="last")].sort_index()
                 all_df.to_csv(file_path)
     except Exception as e:
-        print(f"   -> ❌ Lỗi xử lý {stock}: {e}")
+        print(f" -> ❌ Lỗi xử lý {stock}: {e}")
 
 # ==========================================
 # NODE 3: LÕI HỆ THỐNG BACKTEST
@@ -164,7 +164,7 @@ def run_generic_backtest(df, strategy_info):
     }
 
 # ==========================================
-# CÁC CHIẾN LƯỢC
+# CÁC CHIẾN LƯỢC (TỪ NODE 4 TRỞ ĐI)
 # ==========================================
 def strategy_rsi(df_input):
     df = df_input.copy().reset_index(drop=True)
@@ -353,9 +353,47 @@ def strategy_sma200_rsi_vol(df_input):
     info = { "id": "SMA200_RSI_VOL", "name": "Combo SMA200+RSI+Vol", "category": "Combo", "ruleEntry": "Giá <= SMA200 & RSI <= 30 & Vol <= 50% SMA20 Vol.", "ruleExit": "TP RSI cắt 70 / SL -10%.", "description": "SMA200 + RSI + Vol.", "start_idx": 200, "max_dd": -10.0, "sharpe": 1.45 }
     return run_generic_backtest(df, info)
 
+def strategy_sma1250_tp30_sl20(df_input):
+    df = df_input.copy().reset_index(drop=True)
+    df['sma1250'] = df['close'].rolling(window=1250).mean()
+    buy_cond = (df['low'] <= df['sma1250']) & (df['close'].shift(1) >= df['sma1250'].shift(1))
+    df['signal_buy_cond'] = buy_cond.fillna(False)
+    signal_sell = [False] * len(df)
+    in_pos = False
+    buy_price = 0.0
+
+    for i in range(len(df)):
+        if pd.isna(df['sma1250'].iloc[i]):
+            continue
+        close = df['close'].iloc[i]
+        if not in_pos:
+            if df['signal_buy_cond'].iloc[i]:
+                in_pos = True
+                buy_price = close
+        else:
+            pnl_pct = ((close - buy_price) / buy_price) * 100
+            if pnl_pct >= 30.0 or pnl_pct <= -20.0:
+                signal_sell[i] = True
+                in_pos = False
+
+    df['signal_sell_cond'] = signal_sell
+    info = {
+        "id": "SMA1250_TP30_SL20",
+        "name": "SMA 1250 (TP30/SL20)",
+        "category": "Trend/Support",
+        "ruleEntry": "Giá thấp nhất phiên chạm đường hỗ trợ SMA 1250 (~5 năm).",
+        "ruleExit": "Chốt lời +30% hoặc Cắt lỗ cứng -20%.",
+        "description": "Bắt đáy vùng hỗ trợ siêu dài hạn với biên độ TP/SL rộng.",
+        "start_idx": 1250,
+        "max_dd": -20.0,
+        "sharpe": 1.15
+    }
+    return run_generic_backtest(df, info)
+
 def strategy_supertrend(df_input):
     df = df_input.copy().reset_index(drop=True)
-    period, multiplier = 10, 3.0
+    period = 10
+    multiplier = 3.0
     df['tr0'] = abs(df['high'] - df['low'])
     df['tr1'] = abs(df['high'] - df['close'].shift(1))
     df['tr2'] = abs(df['low'] - df['close'].shift(1))
@@ -364,98 +402,320 @@ def strategy_supertrend(df_input):
     hl2 = (df['high'] + df['low']) / 2
     df['basic_ub'] = hl2 + multiplier * df['atr']
     df['basic_lb'] = hl2 - multiplier * df['atr']
-    final_ub, final_lb, supertrend = np.zeros(len(df)), np.zeros(len(df)), np.zeros(len(df))
+
+    final_ub = np.zeros(len(df))
+    final_lb = np.zeros(len(df))
+    supertrend = np.zeros(len(df))
     direction = np.ones(len(df)) 
+
     for i in range(1, len(df)):
-        final_ub[i] = df['basic_ub'].iloc[i] if df['basic_ub'].iloc[i] < final_ub[i-1] or df['close'].iloc[i-1] > final_ub[i-1] else final_ub[i-1]
-        final_lb[i] = df['basic_lb'].iloc[i] if df['basic_lb'].iloc[i] > final_lb[i-1] or df['close'].iloc[i-1] < final_lb[i-1] else final_lb[i-1]
-        if supertrend[i-1] == final_ub[i-1]: direction[i] = 1 if df['close'].iloc[i] > final_ub[i] else -1
-        else: direction[i] = -1 if df['close'].iloc[i] < final_lb[i] else 1
+        if df['basic_ub'].iloc[i] < final_ub[i-1] or df['close'].iloc[i-1] > final_ub[i-1]:
+            final_ub[i] = df['basic_ub'].iloc[i]
+        else:
+            final_ub[i] = final_ub[i-1]
+        
+        if df['basic_lb'].iloc[i] > final_lb[i-1] or df['close'].iloc[i-1] < final_lb[i-1]:
+            final_lb[i] = df['basic_lb'].iloc[i]
+        else:
+            final_lb[i] = final_lb[i-1]
+            
+        if supertrend[i-1] == final_ub[i-1]:
+            direction[i] = 1 if df['close'].iloc[i] > final_ub[i] else -1
+        else:
+            direction[i] = -1 if df['close'].iloc[i] < final_lb[i] else 1
+
         supertrend[i] = final_lb[i] if direction[i] == 1 else final_ub[i]
+
     df['direction'] = direction
     df['signal_buy_cond'] = (df['direction'] == 1) & (df['direction'].shift(1) == -1)
     df['signal_sell_cond'] = (df['direction'] == -1) & (df['direction'].shift(1) == 1)
-    info = { "id": "SUPERTREND", "name": "SuperTrend (10, 3.0)", "category": "Trend", "ruleEntry": "Giá cắt LÊN dải SuperTrend.", "ruleExit": "Giá cắt XUỐNG dải SuperTrend.", "description": "Chiến lược Trend-following.", "start_idx": period, "max_dd": -15.0, "sharpe": 1.25 }
+    
+    info = {
+        "id": "SUPERTREND",
+        "name": "SuperTrend (10, 3.0)",
+        "category": "Trend",
+        "ruleEntry": "Giá cắt LÊN trên dải SuperTrend (Bắt đầu Uptrend).",
+        "ruleExit": "Giá cắt XUỐNG dưới dải SuperTrend (Bắt đầu Downtrend).",
+        "description": "Chiến lược Trend-following kinh điển trên TradingView.",
+        "start_idx": period,
+        "max_dd": -15.0,
+        "sharpe": 1.25
+    }
     return run_generic_backtest(df, info)
 
 def strategy_nadaraya_watson(df_input):
     df = df_input.copy().reset_index(drop=True)
-    h, mult, window = 8.0, 3.0, 500
+    h = 8.0 
+    mult = 3.0 
+    window = 500 
+
     if len(df) < window:
-        return run_generic_backtest(df, { "id": "NADARAYA_WATSON", "name": "Nadaraya-Watson Env", "category": "Reversal/Bands", "ruleEntry": "N/A", "ruleExit": "N/A", "description": "Không đủ dữ liệu 500 phiên.", "start_idx": 0, "max_dd": 0, "sharpe": 0 })
+        info = {
+            "id": "NADARAYA_WATSON", "name": "Nadaraya-Watson Env", "category": "Reversal/Bands",
+            "ruleEntry": "N/A", "ruleExit": "N/A", "description": "Không đủ dữ liệu 500 phiên.",
+            "start_idx": 0, "max_dd": 0, "sharpe": 0
+        }
+        return run_generic_backtest(df, info)
+
     i = np.arange(window)
     w = np.exp(-(i**2) / (2 * h**2))
-    coefs_rev = (w / np.sum(w))[::-1] 
-    def nw_estimator(x): return np.dot(x, coefs_rev)
+    coefs = w / np.sum(w)
+    coefs_rev = coefs[::-1] 
+
+    def nw_estimator(x):
+        return np.dot(x, coefs_rev)
+
     df['out'] = df['close'].rolling(window=window).apply(nw_estimator, raw=True)
-    df['mae'] = abs(df['close'] - df['out']).rolling(window=window).mean() * mult
-    df['upper'], df['lower'] = df['out'] + df['mae'], df['out'] - df['mae']
-    df['signal_buy_cond'] = (df['close'] < df['lower']) & (df['close'].shift(1) >= df['lower'].shift(1)).fillna(False)
-    df['signal_sell_cond'] = (df['close'] > df['upper']) & (df['close'].shift(1) <= df['upper'].shift(1)).fillna(False)
-    info = { "id": "NADARAYA_WATSON", "name": "Nadaraya-Watson (8, 3)", "category": "Reversal/Bands", "ruleEntry": "Giá cắt XUỐNG biên dưới.", "ruleExit": "Giá cắt LÊN biên trên.", "description": "Bắt đỉnh/đáy bằng Gaussian Kernel Regression.", "start_idx": window * 2 - 1, "max_dd": -15.0, "sharpe": 1.25 }
+    df['abs_err'] = abs(df['close'] - df['out'])
+    df['mae'] = df['abs_err'].rolling(window=window).mean() * mult
+    df['upper'] = df['out'] + df['mae']
+    df['lower'] = df['out'] - df['mae']
+
+    buy_cond = (df['close'] < df['lower']) & (df['close'].shift(1) >= df['lower'].shift(1))
+    df['signal_buy_cond'] = buy_cond.fillna(False)
+    sell_cond = (df['close'] > df['upper']) & (df['close'].shift(1) <= df['upper'].shift(1))
+    df['signal_sell_cond'] = sell_cond.fillna(False)
+    
+    info = {
+        "id": "NADARAYA_WATSON",
+        "name": "Nadaraya-Watson (8, 3)",
+        "category": "Reversal/Bands",
+        "ruleEntry": "Giá cắt XUỐNG dưới biên dưới (Lower Band).",
+        "ruleExit": "Giá cắt LÊN trên biên trên (Upper Band).",
+        "description": "Bắt đỉnh/đáy bằng Gaussian Kernel Regression.",
+        "start_idx": window * 2 - 1, 
+        "max_dd": -15.0,
+        "sharpe": 1.25
+    }
     return run_generic_backtest(df, info)
 
 def strategy_monthly_pivot(df_input):
     df = df_input.copy().reset_index(drop=True)
     df['year_month'] = df['date_clean'].dt.to_period('M')
-    monthly_data = df.groupby('year_month').agg({'high': 'max', 'low': 'min', 'close': 'last'}).reset_index()
-    monthly_data['prev_high'], monthly_data['prev_low'], monthly_data['prev_close'] = monthly_data['high'].shift(1), monthly_data['low'].shift(1), monthly_data['close'].shift(1)
+    monthly_data = df.groupby('year_month').agg({
+        'high': 'max',
+        'low': 'min',
+        'close': 'last'
+    }).reset_index()
+
+    monthly_data['prev_high'] = monthly_data['high'].shift(1)
+    monthly_data['prev_low'] = monthly_data['low'].shift(1)
+    monthly_data['prev_close'] = monthly_data['close'].shift(1)
     df = df.merge(monthly_data[['year_month', 'prev_high', 'prev_low', 'prev_close']], on='year_month', how='left')
+
     df['P'] = (df['prev_high'] + df['prev_low'] + df['prev_close']) / 3
     df['range'] = df['prev_high'] - df['prev_low']
-    df['S2'], df['S4'] = df['P'] - df['range'], df['P'] - 3 * df['range']
-    df['signal_buy_cond'] = (df['low'] <= df['S2']).fillna(False)
-    signal_sell, in_pos = [False] * len(df), False
+    df['S2'] = df['P'] - df['range']
+    df['S4'] = df['P'] - 3 * df['range']
+
+    buy_cond = df['low'] <= df['S2']
+    df['signal_buy_cond'] = buy_cond.fillna(False)
+
+    signal_sell = [False] * len(df)
+    in_pos = False
+
     for i in range(len(df)):
-        if pd.isna(df['P'].iloc[i]): continue
+        if pd.isna(df['P'].iloc[i]):
+            continue
         if not in_pos:
-            if df['signal_buy_cond'].iloc[i]: in_pos = True
+            if df['signal_buy_cond'].iloc[i]:
+                in_pos = True
         else:
-            if df['high'].iloc[i] >= df['P'].iloc[i] or df['low'].iloc[i] <= df['S4'].iloc[i]:
-                signal_sell[i], in_pos = True, False
+            low = df['low'].iloc[i]
+            high = df['high'].iloc[i]
+            if high >= df['P'].iloc[i] or low <= df['S4'].iloc[i]:
+                signal_sell[i] = True
+                in_pos = False
+
     df['signal_sell_cond'] = signal_sell
-    info = { "id": "MONTHLY_PIVOT", "name": "Monthly Pivot (S2 -> P)", "category": "Support/Resistance", "ruleEntry": "Giá chạm Hỗ trợ S2.", "ruleExit": "TP tại P / SL tại S4.", "description": "Bắt đáy cản tâm lý Standard Pivot.", "start_idx": 30, "max_dd": -12.0, "sharpe": 1.35 }
+    info = {
+        "id": "MONTHLY_PIVOT",
+        "name": "Monthly Pivot (S2 -> P)",
+        "category": "Support/Resistance",
+        "ruleEntry": "Giá chạm hoặc giảm xuống dưới mức Hỗ trợ S2 của tháng.",
+        "ruleExit": "TP: Chạm đường trung tâm Pivot (P) / SL: Chạm Hỗ trợ S4.",
+        "description": "Chiến lược bắt đáy tại các vùng cản tâm lý.",
+        "start_idx": 30, 
+        "max_dd": -12.0,
+        "sharpe": 1.35
+    }
     return run_generic_backtest(df, info)
 
 def run_sma1250_advanced(df_input, drop_pct, tp_pct, sl_pct):
     df = df_input.copy().reset_index(drop=True)
     df['sma1250'] = df['close'].rolling(window=1250).mean()
     df['entry_line'] = df['sma1250'] * (1 - drop_pct / 100.0)
+
     buy_cond = (df['low'] <= df['entry_line']) & (df['close'].shift(1) >= df['entry_line'].shift(1))
     df['signal_buy_cond'] = buy_cond.fillna(False)
-    signal_sell, in_pos, buy_price = [False] * len(df), False, 0.0
+
+    signal_sell = [False] * len(df)
+    in_pos = False
+    buy_price = 0.0
+
     for i in range(len(df)):
-        if pd.isna(df['sma1250'].iloc[i]): continue
+        if pd.isna(df['sma1250'].iloc[i]):
+            continue
         close = df['close'].iloc[i]
         if not in_pos:
-            if df['signal_buy_cond'].iloc[i]: in_pos, buy_price = True, close
+            if df['signal_buy_cond'].iloc[i]:
+                in_pos = True
+                buy_price = close
         else:
             pnl_pct = ((close - buy_price) / buy_price) * 100
-            if (pnl_pct >= tp_pct) or (sl_pct is not None and pnl_pct <= sl_pct):
-                signal_sell[i], in_pos = True, False
+            hit_tp = (pnl_pct >= tp_pct)
+            hit_sl = (pnl_pct <= sl_pct) if sl_pct is not None else False
+            if hit_tp or hit_sl:
+                signal_sell[i] = True
+                in_pos = False
+
     df['signal_sell_cond'] = signal_sell
+
     drop_str = f"Âm {drop_pct}%" if drop_pct > 0 else "Chạm"
     sl_str = f"SL{abs(sl_pct)}" if sl_pct is not None else "NoSL"
     info = {
-        "id": f"SMA1250_D{drop_pct}_TP{tp_pct}_{sl_str}", "name": f"SMA1250 {drop_str} (TP{tp_pct}/{sl_str})", "category": f"SMA1250 {drop_str}",
-        "ruleEntry": f"Giá giảm {drop_pct}% so với SMA 1250." if drop_pct > 0 else "Giá chạm SMA 1250.", "ruleExit": f"Chốt lời +{tp_pct}% / Cắt lỗ {sl_pct}%." if sl_pct is not None else f"Chốt lời +{tp_pct}% / Không cắt lỗ.",
-        "description": f"Kiểm thử: Giảm {drop_pct}%, TP {tp_pct}%, SL {abs(sl_pct) if sl_pct else 0}%.", "start_idx": 1250, "max_dd": float(sl_pct) if sl_pct is not None else -50.0, "sharpe": 1.2
+        "id": f"SMA1250_D{drop_pct}_TP{tp_pct}_{sl_str}",
+        "name": f"SMA1250 {drop_str} (TP{tp_pct}/{sl_str})",
+        "category": f"SMA1250 {drop_str}",
+        "ruleEntry": f"Giá giảm {drop_pct}% so với SMA 1250." if drop_pct > 0 else "Giá chạm SMA 1250.",
+        "ruleExit": f"Chốt lời +{tp_pct}% / Cắt lỗ {sl_pct}%." if sl_pct is not None else f"Chốt lời +{tp_pct}% / Không cắt lỗ.",
+        "description": f"Kiểm thử: Giảm {drop_pct}%, TP {tp_pct}%, SL {abs(sl_pct) if sl_pct else 0}%.",
+        "start_idx": 1250,
+        "max_dd": float(sl_pct) if sl_pct is not None else -50.0,
+        "sharpe": 1.2
     }
     return run_generic_backtest(df, info)
 
 SMA1250_STRATEGIES = []
-for d in [0, 5, 10, 15, 20, 25, 30]:
-    for t, s in [(20, None), (20, -10.0), (20, -15.0), (20, -20.0), (25, -10.0), (25, -15.0), (25, -20.0), (25, -25.0), (30, -10.0), (30, -15.0), (30, -20.0), (30, -25.0), (30, -30.0)]:
-        def create_strategy(drop, tp, sl):
-            def strategy_func(df): return run_sma1250_advanced(df, drop, tp, sl)
-            strategy_func.__name__ = f"strat_sma1250_d{drop}_tp{tp}_sl{abs(sl) if sl else 'none'}"
-            return strategy_func
+drop_levels = [0, 5, 10, 15, 20, 25, 30]
+tp_sl_combos = [
+    (20, None), (20, -10.0), (20, -15.0), (20, -20.0),
+    (25, -10.0), (25, -15.0), (25, -20.0), (25, -25.0),
+    (30, -10.0), (30, -15.0), (30, -20.0), (30, -25.0), (30, -30.0)
+]
+
+def create_strategy(d, t, s):
+    def strategy_func(df):
+        return run_sma1250_advanced(df, d, t, s)
+    strategy_func.__name__ = f"strat_sma1250_d{d}_tp{t}_sl{abs(s) if s else 'none'}"
+    return strategy_func
+
+for d in drop_levels:
+    for t, s in tp_sl_combos:
         SMA1250_STRATEGIES.append(create_strategy(d, t, s))
+
+# ==========================================
+# KẾ HOẠCH ĐẦU TƯ MẪU: DCA THEO SMA1250
+# ==========================================
+def strategy_plan_sma1250(df_input):
+    df = df_input.copy().reset_index(drop=True)
+    df['sma1250'] = df['close'].rolling(window=1250).mean()
+
+    initial_capital = 10000000.0  # Vốn 10,000,000 VND
+    cash = initial_capital
+    shares = 0
+    trade_history = []
+    equity_curve = [100]
+
+    # Cấu hình 5 mốc giải ngân
+    levels = [
+        {"drop": 0.00, "alloc": 0.25, "hit": False, "name": "Chạm SMA1250 (Giải ngân 25%)"},
+        {"drop": 0.05, "alloc": 0.25, "hit": False, "name": "SMA1250 - 5% (Giải ngân 25%)"},
+        {"drop": 0.10, "alloc": 0.25, "hit": False, "name": "SMA1250 - 10% (Giải ngân 25%)"},
+        {"drop": 0.15, "alloc": 0.15, "hit": False, "name": "SMA1250 - 15% (Giải ngân 15%)"},
+        {"drop": 0.20, "alloc": 0.10, "hit": False, "name": "SMA1250 - 20% (Giải ngân 10%)"}
+    ]
+
+    for i in range(1250, len(df)):
+        if pd.isna(df['sma1250'].iloc[i]): continue
+        low = df['low'].iloc[i]
+        sma = df['sma1250'].iloc[i]
+        date_str = str(df['date_str'].iloc[i])
+        close = float(df['close'].iloc[i])
+
+        for lvl in levels:
+            if not lvl["hit"]:
+                target_price = sma * (1 - lvl["drop"])
+                if low <= target_price:
+                    budget = initial_capital * lvl["alloc"]
+                    # Xác định giá mua: Khớp tại target_price hoặc giá Mở cửa nếu có Gap Down
+                    buy_price = target_price
+                    if df['open'].iloc[i] < target_price:
+                         buy_price = float(df['open'].iloc[i])
+
+                    # Chỉ mua số nguyên cổ phiếu
+                    buy_shares = int(budget // buy_price)
+                    if buy_shares > 0:
+                        cost = buy_shares * buy_price
+                        cash -= cost
+                        shares += buy_shares
+                        lvl["hit"] = True
+
+                        trade_history.append({
+                            "tradeNo": len(trade_history) + 1,
+                            "positionType": "MUA TÍCH SẢN",
+                            "isOpen": True,
+                            "entryDate": format_tv_date(date_str),
+                            "exitDate": "Đang giữ",
+                            "entrySignal": lvl["name"],
+                            "exitSignal": "-",
+                            "entryPrice": round(buy_price, 0),
+                            "exitPrice": round(close, 0),
+                            "shares": buy_shares,
+                            "sizeValue": round(cost, 0),
+                            "pnlNet": 0, "returnPct": 0, "commission": 0,
+                            "mfeVal": 0, "mfePct": 0, "maeVal": 0, "maePct": 0,
+                            "cumPnlVal": 0, "cumPnlPct": 0,
+                            "durationBars": len(df) - i
+                        })
+
+        # Cập nhật vốn equity curve
+        equity = cash + shares * close
+        equity_curve.append(round((equity / initial_capital) * 100, 2))
+
+    # Chốt giá trị ở nến cuối cùng để tính toán tổng Lãi/Lỗ
+    if len(df) > 0:
+        final_close = float(df['close'].iloc[-1])
+        final_date = format_tv_date(str(df['date_str'].iloc[-1]))
+        
+        for t in trade_history:
+            t["exitPrice"] = round(final_close, 0)
+            t["exitDate"] = final_date + " (Hiện tại)"
+            t["pnlNet"] = round((final_close - t["entryPrice"]) * t["shares"], 0)
+            if t["entryPrice"] > 0:
+                t["returnPct"] = round(((final_close - t["entryPrice"]) / t["entryPrice"]) * 100, 2)
+            t["cumPnlVal"] = t["pnlNet"]
+
+        total_profit = (cash + shares * final_close - initial_capital)
+        profit_pct = round((total_profit / initial_capital) * 100, 2)
+    else:
+        profit_pct = 0.0
+
+    info = {
+        "id": "PLAN_DCA_SMA1250",
+        "name": "Kế hoạch DCA SMA1250 (10tr)",
+        "category": "Kế Hoạch Đầu Tư",
+        "ruleEntry": "Giải ngân 5 mốc khi giá chạm SMA1250 và các mốc giảm 5%, 10%, 15%, 20%.",
+        "ruleExit": "Mua và Nắm giữ dài hạn.",
+        "description": "Vốn 10tr, chỉ mua số cổ phiếu chẵn.",
+        "start_idx": 1250,
+        "max_dd": 0,
+        "sharpe": 0,
+        "profit": profit_pct,
+        "winRate": 100 if profit_pct > 0 else 0,
+        "totalTrades": len(trade_history),
+        "profitFactor": 1,
+        "avgWin": 0, "avgLoss": 0,
+        "equityCurve": equity_curve[-30:],
+        "tradeHistory": list(reversed(trade_history))
+    }
+    return info
 
 # ==========================================
 # NODE 6: XUẤT FILE JSON VÀ LỌC THEO KHUNG
 # ==========================================
-ACTIVE_STRATEGIES = [strategy_rsi, strategy_macd, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_supertrend, strategy_nadaraya_watson, strategy_monthly_pivot] + SMA1250_STRATEGIES
+ACTIVE_STRATEGIES = [strategy_plan_sma1250, strategy_rsi, strategy_macd, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_supertrend, strategy_nadaraya_watson, strategy_monthly_pivot, strategy_sma1250_tp30_sl20] + SMA1250_STRATEGIES
+
 timeframes = ['all', '4y', '2y', '1y', '6m']
 
 def filter_result_by_tf(full_res, df_raw, tf):
@@ -538,7 +798,6 @@ for file_name in csv_files:
         print(f"❌ Lỗi mã {ticker}: {str(e)}")
 
 with open(OUTPUT_JSON_PATH, 'w', encoding='utf-8') as f:
-    # NÉN JSON SIÊU NHỎ BẰNG CÁCH LOẠI BỎ INDENT VÀ THÊM SEPARATORS
-    json.dump(all_results, f, ensure_ascii=False, separators=(',', ':'))
+    json.dump(all_results, f, ensure_ascii=False, indent=2)
 
 print(f"\n🎉 HOÀN TẤT TẠO JSON TẠI: {OUTPUT_JSON_PATH}")
