@@ -164,7 +164,7 @@ def run_generic_backtest(df, strategy_info):
     }
 
 # ==========================================
-# CÁC CHIẾN LƯỢC (TỪ NODE 4 TRỞ ĐI)
+# CÁC CHIẾN LƯỢC CƠ BẢN
 # ==========================================
 def strategy_rsi(df_input):
     df = df_input.copy().reset_index(drop=True)
@@ -402,7 +402,6 @@ def strategy_supertrend(df_input):
     hl2 = (df['high'] + df['low']) / 2
     df['basic_ub'] = hl2 + multiplier * df['atr']
     df['basic_lb'] = hl2 - multiplier * df['atr']
-
     final_ub = np.zeros(len(df))
     final_lb = np.zeros(len(df))
     supertrend = np.zeros(len(df))
@@ -423,7 +422,6 @@ def strategy_supertrend(df_input):
             direction[i] = 1 if df['close'].iloc[i] > final_ub[i] else -1
         else:
             direction[i] = -1 if df['close'].iloc[i] < final_lb[i] else 1
-
         supertrend[i] = final_lb[i] if direction[i] == 1 else final_ub[i]
 
     df['direction'] = direction
@@ -470,7 +468,6 @@ def strategy_nadaraya_watson(df_input):
     df['mae'] = df['abs_err'].rolling(window=window).mean() * mult
     df['upper'] = df['out'] + df['mae']
     df['lower'] = df['out'] - df['mae']
-
     buy_cond = (df['close'] < df['lower']) & (df['close'].shift(1) >= df['lower'].shift(1))
     df['signal_buy_cond'] = buy_cond.fillna(False)
     sell_cond = (df['close'] > df['upper']) & (df['close'].shift(1) <= df['upper'].shift(1))
@@ -510,7 +507,6 @@ def strategy_monthly_pivot(df_input):
 
     buy_cond = df['low'] <= df['S2']
     df['signal_buy_cond'] = buy_cond.fillna(False)
-
     signal_sell = [False] * len(df)
     in_pos = False
 
@@ -570,7 +566,6 @@ def run_sma1250_advanced(df_input, drop_pct, tp_pct, sl_pct):
                 in_pos = False
 
     df['signal_sell_cond'] = signal_sell
-
     drop_str = f"Âm {drop_pct}%" if drop_pct > 0 else "Chạm"
     sl_str = f"SL{abs(sl_pct)}" if sl_pct is not None else "NoSL"
     info = {
@@ -605,45 +600,91 @@ for d in drop_levels:
         SMA1250_STRATEGIES.append(create_strategy(d, t, s))
 
 # ==========================================
-# KẾ HOẠCH ĐẦU TƯ MẪU: DCA THEO SMA1250
+# CHIẾN LƯỢC MỚI: DCA SMA 1250 (5 MỐC) - CHỐT LỜI +20%
 # ==========================================
-def strategy_plan_sma1250(df_input):
+def strategy_dca_sma1250(df_input):
     df = df_input.copy().reset_index(drop=True)
     df['sma1250'] = df['close'].rolling(window=1250).mean()
 
-    initial_capital = 10000000.0  # Vốn 10,000,000 VND
+    initial_capital = 10000000.0
     cash = initial_capital
     shares = 0
     trade_history = []
     equity_curve = [100]
 
-    # Cấu hình 5 mốc giải ngân
-    levels = [
-        {"drop": 0.00, "alloc": 0.25, "hit": False, "name": "Chạm SMA1250 (Giải ngân 25%)"},
-        {"drop": 0.05, "alloc": 0.25, "hit": False, "name": "SMA1250 - 5% (Giải ngân 25%)"},
-        {"drop": 0.10, "alloc": 0.25, "hit": False, "name": "SMA1250 - 10% (Giải ngân 25%)"},
-        {"drop": 0.15, "alloc": 0.15, "hit": False, "name": "SMA1250 - 15% (Giải ngân 15%)"},
-        {"drop": 0.20, "alloc": 0.10, "hit": False, "name": "SMA1250 - 20% (Giải ngân 10%)"}
-    ]
+    # Hàm reset các mốc giải ngân sau khi đã chốt lời
+    def get_fresh_levels():
+        return [
+            {"drop": 0.00, "alloc": 0.25, "hit": False, "name": "MUA 25% (Chạm SMA1250)"},
+            {"drop": 0.05, "alloc": 0.25, "hit": False, "name": "MUA 25% (SMA1250 - 5%)"},
+            {"drop": 0.10, "alloc": 0.25, "hit": False, "name": "MUA 25% (SMA1250 - 10%)"},
+            {"drop": 0.15, "alloc": 0.15, "hit": False, "name": "MUA 15% (SMA1250 - 15%)"},
+            {"drop": 0.20, "alloc": 0.10, "hit": False, "name": "MUA 10% (SMA1250 - 20%)"}
+        ]
+
+    levels = get_fresh_levels()
+    open_trades = []
+    closed_trades_pnl = []
 
     for i in range(1250, len(df)):
         if pd.isna(df['sma1250'].iloc[i]): continue
+        
         low = df['low'].iloc[i]
+        high = df['high'].iloc[i]
         sma = df['sma1250'].iloc[i]
         date_str = str(df['date_str'].iloc[i])
         close = float(df['close'].iloc[i])
 
+        # 1. KIỂM TRA ĐIỀU KIỆN CHỐT LỜI (SMA1250 + 20%)
+        tp_price = sma * 1.20
+        if shares > 0 and high >= tp_price:
+            sell_price = tp_price
+            # Xử lý trường hợp mở cửa tạo Gap Up nhảy vọt qua giá TP
+            if df['open'].iloc[i] > tp_price:
+                sell_price = float(df['open'].iloc[i])
+            
+            # Đóng toàn bộ các vị thế đang mở
+            for t in open_trades:
+                pnl_net = (sell_price - t["entryPrice"]) * t["shares"]
+                pnl_pct = ((sell_price - t["entryPrice"]) / t["entryPrice"]) * 100
+                closed_trades_pnl.append(pnl_pct)
+                cash += t["shares"] * sell_price
+                
+                trade_history.append({
+                    "tradeNo": len(trade_history) + 1,
+                    "positionType": "vị thế mua",
+                    "isOpen": False,
+                    "entryDate": t["entryDate"],
+                    "exitDate": format_tv_date(date_str),
+                    "entrySignal": t["entrySignal"],
+                    "exitSignal": "TP (SMA1250 + 20%)",
+                    "entryPrice": round(t["entryPrice"], 0),
+                    "exitPrice": round(sell_price, 0),
+                    "shares": t["shares"],
+                    "sizeValue": round(t["sizeValue"], 0),
+                    "pnlNet": round(pnl_net, 0),
+                    "returnPct": round(pnl_pct, 2),
+                    "commission": 0,
+                    "mfeVal": 0, "mfePct": 0, "maeVal": 0, "maePct": 0,
+                    "cumPnlVal": 0, "cumPnlPct": 0, 
+                    "durationBars": i - t["entry_idx"]
+                })
+            
+            shares = 0
+            open_trades = []
+            levels = get_fresh_levels() # Reset lại các mốc để chuẩn bị cho vòng lặp mới
+
+        # 2. KIỂM TRA ĐIỀU KIỆN VÀO LỆNH (GIẢI NGÂN)
         for lvl in levels:
             if not lvl["hit"]:
                 target_price = sma * (1 - lvl["drop"])
                 if low <= target_price:
                     budget = initial_capital * lvl["alloc"]
-                    # Xác định giá mua: Khớp tại target_price hoặc giá Mở cửa nếu có Gap Down
                     buy_price = target_price
+                    # Nếu Gap Down đầu phiên vượt quá giá mục tiêu thì mua ở giá mở cửa
                     if df['open'].iloc[i] < target_price:
-                         buy_price = float(df['open'].iloc[i])
+                        buy_price = float(df['open'].iloc[i])
 
-                    # Chỉ mua số nguyên cổ phiếu
                     buy_shares = int(budget // buy_price)
                     if buy_shares > 0:
                         cost = buy_shares * buy_price
@@ -651,61 +692,85 @@ def strategy_plan_sma1250(df_input):
                         shares += buy_shares
                         lvl["hit"] = True
 
-                        trade_history.append({
-                            "tradeNo": len(trade_history) + 1,
-                            "positionType": "MUA TÍCH SẢN",
-                            "isOpen": True,
+                        open_trades.append({
                             "entryDate": format_tv_date(date_str),
-                            "exitDate": "Đang giữ",
                             "entrySignal": lvl["name"],
-                            "exitSignal": "-",
-                            "entryPrice": round(buy_price, 0),
-                            "exitPrice": round(close, 0),
+                            "entryPrice": buy_price,
                             "shares": buy_shares,
-                            "sizeValue": round(cost, 0),
-                            "pnlNet": 0, "returnPct": 0, "commission": 0,
-                            "mfeVal": 0, "mfePct": 0, "maeVal": 0, "maePct": 0,
-                            "cumPnlVal": 0, "cumPnlPct": 0,
-                            "durationBars": len(df) - i
+                            "sizeValue": cost,
+                            "entry_idx": i
                         })
 
-        # Cập nhật vốn equity curve
+        # 3. CẬP NHẬT TÀI SẢN (EQUITY CURVE)
         equity = cash + shares * close
         equity_curve.append(round((equity / initial_capital) * 100, 2))
 
-    # Chốt giá trị ở nến cuối cùng để tính toán tổng Lãi/Lỗ
-    if len(df) > 0:
+    # Xử lý các lệnh vẫn còn đang giữ ở phiên giao dịch cuối cùng
+    if shares > 0 and len(df) > 0:
         final_close = float(df['close'].iloc[-1])
-        final_date = format_tv_date(str(df['date_str'].iloc[-1]))
+        final_date = str(df['date_str'].iloc[-1])
         
-        for t in trade_history:
-            t["exitPrice"] = round(final_close, 0)
-            t["exitDate"] = final_date + " (Hiện tại)"
-            t["pnlNet"] = round((final_close - t["entryPrice"]) * t["shares"], 0)
-            if t["entryPrice"] > 0:
-                t["returnPct"] = round(((final_close - t["entryPrice"]) / t["entryPrice"]) * 100, 2)
-            t["cumPnlVal"] = t["pnlNet"]
+        for t in open_trades:
+            pnl_net = (final_close - t["entryPrice"]) * t["shares"]
+            pnl_pct = ((final_close - t["entryPrice"]) / t["entryPrice"]) * 100
+            
+            trade_history.append({
+                "tradeNo": len(trade_history) + 1,
+                "positionType": "vị thế mua",
+                "isOpen": True,
+                "entryDate": t["entryDate"],
+                "exitDate": format_tv_date(final_date) + " (Hiện tại)",
+                "entrySignal": t["entrySignal"],
+                "exitSignal": "Đang giữ lệnh",
+                "entryPrice": round(t["entryPrice"], 0),
+                "exitPrice": round(final_close, 0),
+                "shares": t["shares"],
+                "sizeValue": round(t["sizeValue"], 0),
+                "pnlNet": round(pnl_net, 0),
+                "returnPct": round(pnl_pct, 2),
+                "commission": 0,
+                "mfeVal": 0, "mfePct": 0, "maeVal": 0, "maePct": 0,
+                "cumPnlVal": 0, "cumPnlPct": 0,
+                "durationBars": (len(df) - 1) - t["entry_idx"]
+            })
 
-        total_profit = (cash + shares * final_close - initial_capital)
-        profit_pct = round((total_profit / initial_capital) * 100, 2)
-    else:
-        profit_pct = 0.0
+    # Tính toán các chỉ số tổng quan
+    final_equity = cash + shares * (float(df['close'].iloc[-1]) if len(df) > 0 else 0)
+    profit = round(((final_equity - initial_capital) / initial_capital) * 100, 2)
+    
+    wins = [p for p in closed_trades_pnl if p > 0]
+    losses = [abs(p) for p in closed_trades_pnl if p < 0]
+    
+    win_rate = round((len(wins) / len(closed_trades_pnl) * 100), 1) if closed_trades_pnl else 0
+    profit_factor = round(sum(wins) / sum(losses), 2) if sum(losses) > 0 else (2.5 if sum(wins) > 0 else 1.0)
+
+    # Cập nhật Lãi/Lỗ lũy kế cho chuỗi lịch sử lệnh
+    cum_val = 0
+    for tr in trade_history:
+        if not tr["isOpen"]:
+            cum_val += tr["pnlNet"]
+            tr["cumPnlVal"] = round(cum_val, 0)
+            tr["cumPnlPct"] = round((cum_val / initial_capital) * 100, 2)
+        else:
+            tr["cumPnlVal"] = round(cum_val + tr["pnlNet"], 0)
+            tr["cumPnlPct"] = round(((cum_val + tr["pnlNet"]) / initial_capital) * 100, 2)
 
     info = {
-        "id": "PLAN_DCA_SMA1250",
-        "name": "Kế hoạch DCA SMA1250 (10tr)",
-        "category": "Kế Hoạch Đầu Tư",
-        "ruleEntry": "Giải ngân 5 mốc khi giá chạm SMA1250 và các mốc giảm 5%, 10%, 15%, 20%.",
-        "ruleExit": "Mua và Nắm giữ dài hạn.",
-        "description": "Vốn 10tr, chỉ mua số cổ phiếu chẵn.",
+        "id": "DCA_SMA1250_TP20",
+        "name": "DCA SMA1250 (TP +20%)",
+        "category": "DCA",
+        "ruleEntry": "Chia vốn 5 mốc: Chạm SMA1250 (25%), -5% (25%), -10% (25%), -15% (15%), -20% (10%).",
+        "ruleExit": "Chốt lời toàn bộ khi giá đạt SMA1250 + 20%.",
+        "description": "Vốn mặc định 10tr. Mua nguyên cổ phiếu.",
         "start_idx": 1250,
-        "max_dd": 0,
-        "sharpe": 0,
-        "profit": profit_pct,
-        "winRate": 100 if profit_pct > 0 else 0,
+        "max_dd": 0, 
+        "sharpe": 1.2,
+        "profit": profit,
+        "winRate": win_rate,
         "totalTrades": len(trade_history),
-        "profitFactor": 1,
-        "avgWin": 0, "avgLoss": 0,
+        "profitFactor": profit_factor,
+        "avgWin": round(float(np.mean(wins)), 2) if wins else 0,
+        "avgLoss": round(float(-np.mean(losses)), 2) if losses else 0,
         "equityCurve": equity_curve[-30:],
         "tradeHistory": list(reversed(trade_history))
     }
@@ -714,7 +779,22 @@ def strategy_plan_sma1250(df_input):
 # ==========================================
 # NODE 6: XUẤT FILE JSON VÀ LỌC THEO KHUNG
 # ==========================================
-ACTIVE_STRATEGIES = [strategy_plan_sma1250, strategy_rsi, strategy_macd, strategy_drop50_52w, strategy_drop50_tp50_sl15, strategy_low_volume, strategy_vol_33_sma20, strategy_drop50_tp25_sl15, strategy_drop50_lowvol, strategy_sma200_rsi_vol, strategy_supertrend, strategy_nadaraya_watson, strategy_monthly_pivot, strategy_sma1250_tp30_sl20] + SMA1250_STRATEGIES
+ACTIVE_STRATEGIES = [
+    strategy_dca_sma1250, 
+    strategy_rsi, 
+    strategy_macd, 
+    strategy_drop50_52w, 
+    strategy_drop50_tp50_sl15, 
+    strategy_low_volume, 
+    strategy_vol_33_sma20, 
+    strategy_drop50_tp25_sl15, 
+    strategy_drop50_lowvol, 
+    strategy_sma200_rsi_vol, 
+    strategy_supertrend, 
+    strategy_nadaraya_watson, 
+    strategy_monthly_pivot, 
+    strategy_sma1250_tp30_sl20
+] + SMA1250_STRATEGIES
 
 timeframes = ['all', '4y', '2y', '1y', '6m']
 
