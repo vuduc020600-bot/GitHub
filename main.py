@@ -17,7 +17,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # ==========================================
 STOCKS = [
 # 1. Ngân hàng
-"ACB", "BID", "CTG", "EIB", "HDB", "LPB", "MBB", "MSB", "NAB", "OCB", "SHB", "SSB", "STB", "TCB", "TPB", "VCB", "VIB", "VPB", "BAB"
+"ACB", "BID", "CTG", "EIB", "HDB", "LPB", "MBB", "MSB", "NAB", "OCB", "SHB", "SSB", "STB", "TCB", "TPB", "VCB", "VIB", "VPB", "BAB",
 
 # 2. khác
 "GAS","HCM","EVF","SSI", "VCI", "VIX", "VND",
