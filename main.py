@@ -16,13 +16,11 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # NODE 2: CẬP NHẬT DỮ LIỆU CỔ PHIẾU
 # ==========================================
 STOCKS = [
-# 1. Ngân hàng & Tài chính - Chứng khoán
-"ACB", "BID", "CTG", "EIB", "HDB", "LPB", "MBB", "MSB", "NAB", "OCB", "SHB", "SSB", "STB", "TCB", "TPB", "VCB", "VIB", "VPB",
-"BSI", "CTS", "DSE", "EVF", "FTS", "HCM", "SSI", "VCI", "VIX", "VND",
+# 1. Ngân hàng
+"ACB", "BID", "CTG", "EIB", "HDB", "LPB", "MBB", "MSB", "NAB", "OCB", "SHB", "SSB", "STB", "TCB", "TPB", "VCB", "VIB", "VPB", "BAB"
 
-# 2. Năng lượng, Dầu khí, Tiện ích & Công nghiệp khác
-"BSR", "GAS", "GEE", "GEX", "NT2", "PC1", "PLX", "POW", "PVD", "PVT",
-"BWE", "DCM", "DGC", "DPM", "GMD", "GVR", "PAN", "PHR", "REE", "SBT", "SCS", "SIP", "VJC", "VSC", "VTP", "BVH"
+# 2. khác
+"GAS","HCM","EVF","SSI", "VCI", "VIX", "VND",
 ]
 
 for stock in STOCKS:
