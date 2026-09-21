@@ -28,23 +28,10 @@ for stock in STOCKS:
     file_path = f"{DATA_DIR}/{stock}.csv"
     print(f"\n🔄 Xử lý dữ liệu: {stock}")
     try:
-        if not os.path.exists(file_path):
-            df = yf.download(ticker, start="2000-01-01", auto_adjust=True, progress=False)
-            if not df.empty:
-                df.to_csv(file_path)
-        else:
-            try:
-                old_df = pd.read_csv(file_path, header=[0,1], index_col=0)
-                old_df.index = pd.to_datetime(old_df.index)
-            except Exception:
-                old_df = pd.read_csv(file_path, index_col=0)
-                old_df.index = pd.to_datetime(old_df.index)
-
-            new_df = yf.download(ticker, period="30d", auto_adjust=True, progress=False)
-            if not new_df.empty:
-                all_df = pd.concat([old_df, new_df])
-                all_df = all_df[~all_df.index.duplicated(keep="last")].sort_index()
-                all_df.to_csv(file_path)
+        # Luôn tải lại toàn bộ lịch sử để cập nhật giá điều chỉnh (chia cổ tức, phát hành thêm)
+        df = yf.download(ticker, start="2000-01-01", auto_adjust=True, progress=False)
+        if not df.empty:
+            df.to_csv(file_path)
     except Exception as e:
         print(f" -> ❌ Lỗi xử lý {stock}: {e}")
 
